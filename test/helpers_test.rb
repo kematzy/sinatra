@@ -142,6 +142,19 @@ class HelpersTest < Test::Unit::TestCase
       assert_equal 404, status
       assert_equal '', body
     end
+
+    it 'does not set a X-Cascade header' do
+      mock_app {
+        get '/' do
+          not_found
+          fail 'not_found should halt'
+        end
+      }
+
+      get '/'
+      assert_equal 404, status
+      assert_equal nil, response.headers['X-Cascade']
+    end
   end
 
   describe 'headers' do
@@ -207,27 +220,40 @@ class HelpersTest < Test::Unit::TestCase
     end
   end
 
-  describe 'media_type' do
+  describe 'mime_type' do
     include Sinatra::Helpers
 
-    it "looks up media types in Rack's MIME registry" do
+    it "looks up mime types in Rack's MIME registry" do
       Rack::Mime::MIME_TYPES['.foo'] = 'application/foo'
-      assert_equal 'application/foo', media_type('foo')
-      assert_equal 'application/foo', media_type('.foo')
-      assert_equal 'application/foo', media_type(:foo)
+      assert_equal 'application/foo', mime_type('foo')
+      assert_equal 'application/foo', mime_type('.foo')
+      assert_equal 'application/foo', mime_type(:foo)
     end
 
     it 'returns nil when given nil' do
-      assert media_type(nil).nil?
+      assert mime_type(nil).nil?
     end
 
     it 'returns nil when media type not registered' do
-      assert media_type(:bizzle).nil?
+      assert mime_type(:bizzle).nil?
     end
 
     it 'returns the argument when given a media type string' do
-      assert_equal 'text/plain', media_type('text/plain')
+      assert_equal 'text/plain', mime_type('text/plain')
     end
+  end
+
+  test 'Base.mime_type registers mime type' do
+    mock_app {
+      mime_type :foo, 'application/foo'
+
+      get '/' do
+        "foo is #{mime_type(:foo)}"
+      end
+    }
+
+    get '/'
+    assert_equal 'foo is application/foo', body
   end
 
   describe 'content_type' do

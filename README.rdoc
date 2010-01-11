@@ -150,6 +150,19 @@ and overridden on an individual basis.
 
 Renders <tt>./views/index.erb</tt>
 
+=== Erubis
+
+The erubis gem/library is required to render builder templates:
+
+  ## You'll need to require erubis in your app
+  require 'erubis'
+
+  get '/' do
+    erubis :index
+  end
+
+Renders <tt>./views/index.erubis</tt>
+
 === Builder Templates
 
 The builder gem/library is required to render builder templates:
@@ -187,9 +200,8 @@ and overridden on an individual basis.
 
   get '/stylesheet.css' do
     content_type 'text/css', :charset => 'utf-8'
-    sass :stylesheet, :sass_options => {:style => :expanded } # overridden
+    sass :stylesheet, :style => :expanded # overridden
   end
-
 
 === Inline Templates
 
@@ -219,7 +231,7 @@ Or, specify an explicit Hash of local variables:
 This is typically used when rendering templates as partials from within
 other templates.
 
-=== In-file Templates
+=== Inline Templates
 
 Templates may be defined at the end of the source file:
 
@@ -239,9 +251,9 @@ Templates may be defined at the end of the source file:
   @@ index
   %div.title Hello world!!!!!
 
-NOTE: In-file templates defined in the source file that requires sinatra
-are automatically loaded. Call the <tt>use_in_file_templates!</tt>
-method explicitly if you have in-file templates in other source files.
+NOTE: Inline templates defined in the source file that requires sinatra
+are automatically loaded. Call `enable :inline_templates` explicitly if you
+have inline templates in other source files.
 
 === Named Templates
 
@@ -297,19 +309,35 @@ filters are accessible by routes and templates:
     params[:splat] #=> 'bar/baz'
   end
 
+After filter are evaluated after each request within the context of the
+request and can also modify the request and response. Instance variables
+set in before filters and routes are accessible by after filters:
+
+  after do
+    puts response.status
+  end
+
 == Halting
 
-To immediately stop a request during a before filter or route use:
+To immediately stop a request within a filter or route use:
 
   halt
 
-You can also specify a body when halting ...
+You can also specify the status when halting ...
+
+  halt 410
+
+Or the body ...
 
   halt 'this will be the body'
 
-Or set the status and body ...
+Or both ...
 
   halt 401, 'go away!'
+
+With headers ...
+
+  halt 402, {'Content-Type' => 'text/plain'}, 'revenge'
 
 == Passing
 
@@ -317,11 +345,11 @@ A route can punt processing to the next matching route using <tt>pass</tt>:
 
   get '/guess/:who' do
     pass unless params[:who] == 'Frank'
-    "You got me!"
+    'You got me!'
   end
 
   get '/guess/*' do
-    "You missed!"
+    'You missed!'
   end
 
 The route block is immediately exited and control continues with the next
@@ -367,7 +395,7 @@ code is 404, the <tt>not_found</tt> handler is invoked:
 === Error
 
 The +error+ handler is invoked any time an exception is raised from a route
-block or before filter. The exception object can be obtained from the
+block or a filter. The exception object can be obtained from the
 <tt>sinatra.error</tt> Rack variable:
 
   error do
@@ -390,15 +418,35 @@ You get this:
 
   So what happened was... something bad
 
+Alternatively, you can install error handler for a status code:
+
+  error 403 do
+    'Access forbidden'
+  end
+
+  get '/secret' do
+    403
+  end
+
+Or a range:
+
+  error 400..510 do
+    'Boom'
+  end
+
 Sinatra installs special <tt>not_found</tt> and <tt>error</tt> handlers when
 running under the development environment.
 
 == Mime types
 
 When using <tt>send_file</tt> or static files you may have mime types Sinatra
-doesn't understand. Use +mime+ to register them by file extension:
+doesn't understand. Use +mime_type+ to register them by file extension:
 
-  mime :foo, 'text/foo'
+  mime_type :foo, 'text/foo'
+
+You can also use it with the +content_type+ helper:
+
+  content_type :foo
 
 == Rack Middleware
 
@@ -524,12 +572,13 @@ being {included into the main namespace}[http://github.com/sinatra/sinatra/blob/
 
 Sinatra applications can be run directly:
 
-  ruby myapp.rb [-h] [-x] [-e ENVIRONMENT] [-p PORT] [-s HANDLER]
+  ruby myapp.rb [-h] [-x] [-e ENVIRONMENT] [-p PORT] [-h HOST] [-s HANDLER]
 
 Options are:
 
   -h # help
   -p # set the port (default is 4567)
+  -h # set the host (default is 0.0.0.0)
   -e # set the environment (default is development)
   -s # specify rack server/handler (default is thin)
   -x # turn on the mutex lock (default is off)
