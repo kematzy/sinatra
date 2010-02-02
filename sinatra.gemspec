@@ -3,8 +3,8 @@ Gem::Specification.new do |s|
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
 
   s.name = 'sinatra'
-  s.version = '0.10.1'
-  s.date = '2009-12-13'
+  s.version = '1.0.a'
+  s.date = '2010-01-28'
 
   s.description = "Classy web-development dressed in a DSL"
   s.summary     = "Classy web-development dressed in a DSL"
@@ -31,7 +31,6 @@ Gem::Specification.new do |s|
     test/base_test.rb
     test/builder_test.rb
     test/contest.rb
-    test/data/reload_app_file.rb
     test/erb_test.rb
     test/erubis_test.rb
     test/extensions_test.rb
@@ -41,7 +40,7 @@ Gem::Specification.new do |s|
     test/helpers_test.rb
     test/mapped_error_test.rb
     test/middleware_test.rb
-    test/options_test.rb
+    test/public/favicon.ico
     test/request_test.rb
     test/response_test.rb
     test/result_test.rb
@@ -49,6 +48,7 @@ Gem::Specification.new do |s|
     test/routing_test.rb
     test/sass_test.rb
     test/server_test.rb
+    test/settings_test.rb
     test/sinatra_test.rb
     test/static_test.rb
     test/templates_test.rb
@@ -76,8 +76,11 @@ Gem::Specification.new do |s|
 
   s.extra_rdoc_files = %w[README.rdoc LICENSE]
   s.add_dependency 'rack',    '>= 1.0'
-  s.add_development_dependency 'shotgun', '>= 0.3',   '< 1.0'
+  s.add_development_dependency 'shotgun', '>= 0.6',   '< 1.0'
   s.add_development_dependency 'rack-test', '>= 0.3.0'
+  s.add_development_dependency 'haml'
+  s.add_development_dependency 'builder'
+  s.add_development_dependency 'erubis'
 
   s.has_rdoc = true
   s.homepage = "http://sinatra.rubyforge.org"

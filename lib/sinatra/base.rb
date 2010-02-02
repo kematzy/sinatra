@@ -13,29 +13,33 @@ rescue LoadError
 end
 
 module Sinatra
-  VERSION = '0.10.1'
+  VERSION = '1.0.a'
 
   # The request object. See Rack::Request for more info:
   # http://rack.rubyforge.org/doc/classes/Rack/Request.html
   class Request < Rack::Request
-    def user_agent
-      @env['HTTP_USER_AGENT']
-    end
-
     # Returns an array of acceptable media types for the response
     def accept
       @env['HTTP_ACCEPT'].to_s.split(',').map { |a| a.strip }
     end
 
-    # Override Rack 0.9.x's #params implementation (see #72 in lighthouse)
-    def params
-      self.GET.update(self.POST)
-    rescue EOFError, Errno::ESPIPE
-      self.GET
-    end
-
     def secure?
       (@env['HTTP_X_FORWARDED_PROTO'] || @env['rack.url_scheme']) == 'https'
+    end
+
+    # Override Rack < 1.1's Request#params implementation (see lh #72 for
+    # more info) and add a Request#user_agent method.
+    # XXX remove when we require rack > 1.1
+    if Rack.release < '1.1'
+      def params
+        self.GET.update(self.POST)
+      rescue EOFError, Errno::ESPIPE
+        self.GET
+      end
+
+      def user_agent
+        @env['HTTP_USER_AGENT']
+      end
     end
   end
 
@@ -383,6 +387,7 @@ module Sinatra
       @request  = Request.new(env)
       @response = Response.new
       @params   = indifferent_params(@request.params)
+      @template_cache.clear if settings.reload_templates
 
       invoke { dispatch! }
       invoke { error_block!(response.status) }
@@ -520,6 +525,7 @@ module Sinatra
       return if path[0, public_dir.length] != public_dir
       return unless File.file?(path)
 
+      env['sinatra.static_file'] = path
       send_file path, :disposition => nil
     end
 
@@ -579,7 +585,7 @@ module Sinatra
     rescue ::Exception => boom
       handle_exception!(boom)
     ensure
-      after_filter!
+      after_filter! unless env['sinatra.static_file']
     end
 
     def handle_not_found!(boom)
@@ -838,9 +844,9 @@ module Sinatra
         unbound_method = instance_method("#{verb} #{path}")
         block =
           if block.arity != 0
-            lambda { unbound_method.bind(self).call(*@block_params) }
+            proc { unbound_method.bind(self).call(*@block_params) }
           else
-            lambda { unbound_method.bind(self).call }
+            proc { unbound_method.bind(self).call }
           end
 
         invoke_hook(:route_added, verb, path, block)
@@ -945,7 +951,7 @@ module Sinatra
         builder = Rack::Builder.new
         builder.use Rack::Session::Cookie if sessions?
         builder.use Rack::CommonLogger    if logging?
-        builder.use Rack::MethodOverride  if methodoverride?
+        builder.use Rack::MethodOverride  if method_override?
         builder.use ShowExceptions        if show_exceptions?
         middleware.each { |c,a,b| builder.use(c, *a, &b) }
 
@@ -1017,15 +1023,19 @@ module Sinatra
 
     reset!
 
-    set :raise_errors, true
-    set :dump_errors, false
+    set :environment, (ENV['RACK_ENV'] || :development).to_sym
+    set :raise_errors, Proc.new { !development? }
+    set :dump_errors, Proc.new { development? }
+    set :show_exceptions, Proc.new { development? }
     set :clean_trace, true
-    set :show_exceptions, false
     set :sessions, false
     set :logging, false
-    set :methodoverride, false
-    set :static, false
-    set :environment, (ENV['RACK_ENV'] || :development).to_sym
+    set :method_override, false
+
+    class << self
+      alias_method :methodoverride?, :method_override?
+      alias_method :methodoverride=, :method_override=
+    end
 
     set :run, false                       # start server via at-exit hook?
     set :running, false                   # is the built-in server running now?
@@ -1036,8 +1046,11 @@ module Sinatra
     set :app_file, nil
     set :root, Proc.new { app_file && File.expand_path(File.dirname(app_file)) }
     set :views, Proc.new { root && File.join(root, 'views') }
-    set :public, Proc.new { root && File.join(root, 'public') }
+    set :reload_templates, Proc.new { !development? }
     set :lock, false
+
+    set :public, Proc.new { root && File.join(root, 'public') }
+    set :static, Proc.new { self.public && File.exist?(self.public) }
 
     error ::Exception do
       response.status = 500
@@ -1079,27 +1092,27 @@ module Sinatra
     end
   end
 
-  # Base class for classic style (top-level) applications.
-  class Default < Base
+  # Execution context for classic style (top-level) applications. All
+  # DSL methods executed on main are delegated to this class.
+  #
+  # The Application class should not be subclassed, unless you want to
+  # inherit all settings, routes, handlers, and error pages from the
+  # top-level. Subclassing Sinatra::Base is heavily recommended for
+  # modular applications.
+  class Application < Base
     set :raise_errors, Proc.new { test? }
-    set :show_exceptions, Proc.new { development? }
     set :dump_errors, true
     set :sessions, false
     set :logging, Proc.new { ! test? }
-    set :methodoverride, true
-    set :static, true
+    set :method_override, true
     set :run, Proc.new { ! test? }
+    set :static, true
 
     def self.register(*extensions, &block) #:nodoc:
       added_methods = extensions.map {|m| m.public_instance_methods }.flatten
       Delegator.delegate(*added_methods)
       super(*extensions, &block)
     end
-  end
-
-  # The top-level Application. All DSL methods executed on main are delegated
-  # to this class.
-  class Application < Default
   end
 
   # Sinatra delegation mixin. Mixing this module into an object causes all
@@ -1119,8 +1132,8 @@ module Sinatra
 
     delegate :get, :put, :post, :delete, :head, :template, :layout,
              :before, :after, :error, :not_found, :configure, :set, :mime_type,
-             :enable, :disable, :use, :development?, :test?,
-             :production?, :use_in_file_templates!, :helpers
+             :enable, :disable, :use, :development?, :test?, :production?,
+             :helpers, :settings
   end
 
   # Create a new Sinatra application. The block is evaluated in the new app's
@@ -1133,11 +1146,11 @@ module Sinatra
 
   # Extend the top-level DSL with the modules provided.
   def self.register(*extensions, &block)
-    Default.register(*extensions, &block)
+    Application.register(*extensions, &block)
   end
 
   # Include the helper modules provided in Sinatra's request context.
   def self.helpers(*extensions, &block)
-    Default.helpers(*extensions, &block)
+    Application.helpers(*extensions, &block)
   end
 end
