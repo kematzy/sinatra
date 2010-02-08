@@ -21,6 +21,19 @@ class SettingsTest < Test::Unit::TestCase
     assert_equal 'baz', @base.foo
   end
 
+  it 'sets settings using a block' do
+    @base.set(:foo){ 'baz' }
+    assert @base.respond_to?(:foo)
+    assert_equal 'baz', @base.foo
+  end
+
+  it 'raises an error with a value and a block' do
+    assert_raise ArgumentError do
+      @base.set(:fiz, 'boom!'){ 'baz' }
+    end
+    assert !@base.respond_to?(:fiz)
+  end
+
   it "sets multiple settings with a Hash" do
     @base.set :foo => 1234,
         :bar => 'Hello World',
@@ -306,10 +319,10 @@ class SettingsTest < Test::Unit::TestCase
     end
   end
 
-  describe 'host' do
+  describe 'bind' do
     it 'defaults to 0.0.0.0' do
-      assert_equal '0.0.0.0', @base.host
-      assert_equal '0.0.0.0', @application.host
+      assert_equal '0.0.0.0', @base.bind
+      assert_equal '0.0.0.0', @application.bind
     end
   end
 
