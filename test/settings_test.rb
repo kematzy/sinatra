@@ -135,52 +135,6 @@ class SettingsTest < Test::Unit::TestCase
     end
   end
 
-  describe 'clean_trace' do
-    def clean_backtrace(trace)
-      Sinatra::Base.new.send(:clean_backtrace, trace)
-    end
-
-    it 'is enabled on Base' do
-      assert @base.clean_trace?
-    end
-
-    it 'is enabled on Application' do
-      assert @application.clean_trace?
-    end
-
-    it 'does nothing when disabled' do
-      backtrace = [
-        "./lib/sinatra/base.rb",
-        "./myapp:42",
-        ("#{Gem.dir}/some/lib.rb" if defined?(Gem))
-      ].compact
-
-      klass = Class.new(Sinatra::Base)
-      klass.disable :clean_trace
-
-      assert_equal backtrace, klass.new.send(:clean_backtrace, backtrace)
-    end
-
-    it 'removes sinatra lib paths from backtrace when enabled' do
-      backtrace = [
-        "./lib/sinatra/base.rb",
-        "./lib/sinatra/compat.rb:42",
-        "./lib/sinatra/main.rb:55 in `foo'"
-      ]
-      assert clean_backtrace(backtrace).empty?
-    end
-
-    it 'removes ./ prefix from backtrace paths when enabled' do
-      assert_equal ['myapp.rb:42'], clean_backtrace(['./myapp.rb:42'])
-    end
-
-    if defined?(Gem)
-      it 'removes gem lib paths from backtrace when enabled' do
-        assert clean_backtrace(["#{Gem.dir}/some/lib"]).empty?
-      end
-    end
-  end
-
   describe 'run' do
     it 'is disabled on Base' do
       assert ! @base.run?
@@ -195,10 +149,11 @@ class SettingsTest < Test::Unit::TestCase
   end
 
   describe 'raise_errors' do
-    it 'is enabled on Base except under development' do
+    it 'is enabled on Base only in test' do
+      assert ! @base.raise_errors?
+
+      @base.set(:environment, :test)
       assert @base.raise_errors?
-      @base.environment = :development
-      assert !@base.raise_errors?
     end
 
     it 'is enabled on Application only in test' do
@@ -241,20 +196,20 @@ class SettingsTest < Test::Unit::TestCase
   end
 
   describe 'dump_errors' do
-    it 'is disabled on Base except in development' do
+    it 'is disabled on Base in test' do
+      @base.environment = :test
       assert ! @base.dump_errors?
       @base.environment = :development
       assert @base.dump_errors?
-    end
-
-    it 'is enabled on Application' do
-      assert @application.dump_errors?
+      @base.environment = :production
+      assert @base.dump_errors?
     end
 
     it 'dumps exception with backtrace to rack.errors' do
       klass = Sinatra.new(Sinatra::Application)
 
       mock_app(klass) {
+        enable :dump_errors
         disable :raise_errors
 
         error do
@@ -314,7 +269,19 @@ class SettingsTest < Test::Unit::TestCase
       assert @base.static?
     end
 
-    it 'is enabled on Application' do
+    it 'is disabled on Application by default' do
+      assert ! @application.static?
+    end
+
+    it 'is enabled on Application when public is set and exists' do
+      @application.set :environment, :development
+      @application.set :public, File.dirname(__FILE__)
+      assert @application.static?
+    end
+
+    it 'is enabled on Application when root is set and root/public exists' do
+      @application.set :environment, :development
+      @application.set :root, File.dirname(__FILE__)
       assert @application.static?
     end
   end

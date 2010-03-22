@@ -9,6 +9,12 @@
    template backtraces, and support for new template engines, like
    mustache and liquid. (Ryan Tomayko)
 
+ * ERB, Erubis, and Haml templates are now compiled the first time
+   they're rendered instead of being string eval'd on each invocation.
+   Benchmarks show a 5x-10x improvement in render time. This also
+   reduces the number of objects created, decreasing pressure on Ruby's
+   GC. (Ryan Tomayko)
+
  * New 'settings' method gives access to options in both class and request
    scopes. This replaces the 'options' method. (Chris Wanstrath)
 
@@ -33,7 +39,7 @@
  * New request.secure? method for checking for an SSL connection.
    (Adam Wiggins)
 
- * Sinatra apps can now be run with a `-h <addr>` argument to specify
+ * Sinatra apps can now be run with a `-o <addr>` argument to specify
    the address to bind to. (Ryan Tomayko)
 
  * Rack::Session::Cookie is now added to the middleware pipeline when
@@ -47,8 +53,20 @@
    of issues with extensions that need to add any of these things
    to the base class. (Ryan Tomayko)
 
+ * Exception error handlers always override the raise_errors option now.
+   Previously, all exceptions would be raised outside of the application
+   when the raise_errors option was enabled, even if an error handler was
+   defined for that exception. The raise_errors option now controls
+   whether unhandled exceptions are raised (enabled) or if a generic 500
+   error is returned (disabled). (Ryan Tomayko)
+
  * The X-Cascade response header is set to 'pass' when no matching route
    is found or all routes pass. (Josh Peek)
+
+ * Filters do not run when serving static files anymore. (Ryan Tomayko)
+
+ * pass takes an optional block to be used as the route handler if no
+   subsequent route matches the request. (Blake Mizerany)
 
 The following Sinatra features have been obsoleted (removed entirely) in
 the 1.0 release:
