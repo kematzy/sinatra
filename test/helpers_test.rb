@@ -1,4 +1,5 @@
 require File.dirname(__FILE__) + '/helper'
+require 'date'
 
 class HelpersTest < Test::Unit::TestCase
   def test_default
@@ -57,7 +58,7 @@ class HelpersTest < Test::Unit::TestCase
       get '/'
       assert_equal 302, status
       assert_equal '', body
-      assert_equal '/foo', response['Location']
+      assert_equal 'http://example.org/foo', response['Location']
     end
 
     it 'uses the code given when specified' do
@@ -71,7 +72,7 @@ class HelpersTest < Test::Unit::TestCase
       get '/'
       assert_equal 301, status
       assert_equal '', body
-      assert_equal '/foo', response['Location']
+      assert_equal 'http://example.org/foo', response['Location']
     end
 
     it 'redirects back to request.referer when passed back' do
@@ -84,7 +85,31 @@ class HelpersTest < Test::Unit::TestCase
       request = Rack::MockRequest.new(@app)
       response = request.get('/try_redirect', 'HTTP_REFERER' => '/foo')
       assert_equal 302, response.status
-      assert_equal '/foo', response['Location']
+      assert_equal 'http://example.org/foo', response['Location']
+    end
+
+    it 'redirects using a non-standard HTTP port' do
+      mock_app {
+        get '/' do
+          redirect '/foo'
+        end
+      }
+
+      request = Rack::MockRequest.new(@app)
+      response = request.get('/', 'SERVER_PORT' => '81')
+      assert_equal 'http://example.org:81/foo', response['Location']
+    end
+
+    it 'redirects using a non-standard HTTPS port' do
+      mock_app {
+        get '/' do
+          redirect '/foo'
+        end
+      }
+
+      request = Rack::MockRequest.new(@app)
+      response = request.get('/', 'SERVER_PORT' => '444')
+      assert_equal 'http://example.org:444/foo', response['Location']
     end
   end
 
@@ -266,21 +291,21 @@ class HelpersTest < Test::Unit::TestCase
       }
 
       get '/'
-      assert_equal 'text/plain', response['Content-Type']
+      assert_equal 'text/plain;charset=utf-8', response['Content-Type']
       assert_equal 'Hello World', body
     end
 
     it 'takes media type parameters (like charset=)' do
       mock_app {
         get '/' do
-          content_type 'text/html', :charset => 'utf-8'
+          content_type 'text/html', :charset => 'latin1'
           "<h1>Hello, World</h1>"
         end
       }
 
       get '/'
       assert ok?
-      assert_equal 'text/html;charset=utf-8', response['Content-Type']
+      assert_equal 'text/html;charset=latin1', response['Content-Type']
       assert_equal "<h1>Hello, World</h1>", body
     end
 
@@ -308,6 +333,32 @@ class HelpersTest < Test::Unit::TestCase
       }
 
       assert_raise(RuntimeError) { get '/foo.xml' }
+    end
+
+    it 'only sets default charset for specific mime types' do
+      tests_ran = false
+      mock_app do
+        mime_type :foo, 'text/foo'
+        mime_type :bar, 'application/bar'
+        mime_type :baz, 'application/baz'
+        add_charset << mime_type(:baz)
+        get '/' do
+          assert_equal content_type(:txt),    'text/plain;charset=utf-8'
+          assert_equal content_type(:css),    'text/css;charset=utf-8'
+          assert_equal content_type(:html),   'text/html;charset=utf-8'
+          assert_equal content_type(:foo),    'text/foo;charset=utf-8'
+          assert_equal content_type(:xml),    'application/xml;charset=utf-8'
+          assert_equal content_type(:xhtml),  'application/xhtml+xml;charset=utf-8'
+          assert_equal content_type(:js),     'application/javascript;charset=utf-8'
+          assert_equal content_type(:bar),    'application/bar'
+          assert_equal content_type(:png),    'image/png'
+          assert_equal content_type(:baz),    'application/baz;charset=utf-8'
+          tests_ran = true
+          "done"
+        end
+      end
+      get '/'
+      assert tests_ran
     end
   end
 
@@ -341,7 +392,19 @@ class HelpersTest < Test::Unit::TestCase
     it 'sets the Content-Type response header if a mime-type can be located' do
       send_file_app
       get '/file.txt'
-      assert_equal 'text/plain', response['Content-Type']
+      assert_equal 'text/plain;charset=utf-8', response['Content-Type']
+    end
+
+    it 'sets the Content-Type response header if type option is set to a file extesion' do
+      send_file_app :type => 'html'
+      get '/file.txt'
+      assert_equal 'text/html;charset=utf-8', response['Content-Type']
+    end
+
+    it 'sets the Content-Type response header if type option is set to a mime type' do
+      send_file_app :type => 'application/octet-stream'
+      get '/file.txt'
+      assert_equal 'application/octet-stream', response['Content-Type']
     end
 
     it 'sets the Content-Length response header' do
@@ -389,7 +452,7 @@ class HelpersTest < Test::Unit::TestCase
     setup do
       mock_app {
         get '/' do
-          cache_control :public, :no_cache, :max_age => 60
+          cache_control :public, :no_cache, :max_age => 60.0
           'Hello World'
         end
       }
@@ -423,42 +486,109 @@ class HelpersTest < Test::Unit::TestCase
   end
 
   describe 'last_modified' do
-    setup do
-      now = Time.now
-      mock_app {
-        get '/' do
-          body { 'Hello World' }
-          last_modified now
-          'Boo!'
-        end
-      }
-      @now = now
-    end
-
-    it 'sets the Last-Modified header to a valid RFC 2616 date value' do
-      get '/'
-      assert_equal @now.httpdate, response['Last-Modified']
-    end
-
-    it 'returns a body when conditional get misses' do
-      get '/'
-      assert_equal 200, status
-      assert_equal 'Boo!', body
-    end
-
-    it 'halts when a conditional GET matches' do
-      get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => @now.httpdate }
-      assert_equal 304, status
-      assert_equal '', body
-    end
-
     it 'ignores nil' do
-      mock_app {
+      mock_app do
         get '/' do last_modified nil; 200; end
-      }
+      end
 
       get '/'
       assert ! response['Last-Modified']
+    end
+
+    [Time, DateTime].each do |klass|
+      describe "with #{klass.name}" do
+        setup do
+          last_modified_time = klass.now
+          mock_app do
+            get '/' do
+              last_modified last_modified_time
+              'Boo!'
+            end
+          end
+          @last_modified_time = Time.parse last_modified_time.to_s
+        end
+
+        # fixes strange missing test error when running complete test suite.
+        it("does not complain about missing tests") { }
+
+        context "when there's no If-Modified-Since header" do
+          it 'sets the Last-Modified header to a valid RFC 2616 date value' do
+            get '/'
+            assert_equal @last_modified_time.httpdate, response['Last-Modified']
+          end
+
+          it 'conditional GET misses and returns a body' do
+            get '/'
+            assert_equal 200, status
+            assert_equal 'Boo!', body
+          end
+        end
+
+        context "when there's an invalid If-Modified-Since header" do
+          it 'sets the Last-Modified header to a valid RFC 2616 date value' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => 'a really weird date' }
+            assert_equal @last_modified_time.httpdate, response['Last-Modified']
+          end
+
+          it 'conditional GET misses and returns a body' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => 'a really weird date' }
+            assert_equal 200, status
+            assert_equal 'Boo!', body
+          end
+        end
+
+        context "when the resource has been modified since the If-Modified-Since header date" do
+          it 'sets the Last-Modified header to a valid RFC 2616 date value' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => (@last_modified_time - 1).httpdate }
+            assert_equal @last_modified_time.httpdate, response['Last-Modified']
+          end
+
+          it 'conditional GET misses and returns a body' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => (@last_modified_time - 1).httpdate }
+            assert_equal 200, status
+            assert_equal 'Boo!', body
+          end
+
+          it 'does not rely on string comparison' do
+            mock_app do
+              get '/compare' do
+                last_modified "Mon, 18 Oct 2010 20:57:11 GMT"
+                "foo"
+              end
+            end
+
+            get '/compare', {}, { 'HTTP_IF_MODIFIED_SINCE' => 'Sun, 26 Sep 2010 23:43:52 GMT' }
+            assert_equal 200, status
+            assert_equal 'foo', body
+          end
+        end
+
+        context "when the resource has been modified on the exact If-Modified-Since header date" do
+          it 'sets the Last-Modified header to a valid RFC 2616 date value' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => @last_modified_time.httpdate }
+            assert_equal @last_modified_time.httpdate, response['Last-Modified']
+          end
+
+          it 'conditional GET matches and halts' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => @last_modified_time.httpdate }
+            assert_equal 304, status
+            assert_equal '', body
+          end
+        end
+
+        context "when the resource hasn't been modified since the If-Modified-Since header date" do
+          it 'sets the Last-Modified header to a valid RFC 2616 date value' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => (@last_modified_time + 1).httpdate }
+            assert_equal @last_modified_time.httpdate, response['Last-Modified']
+          end
+
+          it 'conditional GET matches and halts' do
+            get '/', {}, { 'HTTP_IF_MODIFIED_SINCE' => (@last_modified_time + 1).httpdate }
+            assert_equal 304, status
+            assert_equal '', body
+          end
+        end
+      end
     end
   end
 

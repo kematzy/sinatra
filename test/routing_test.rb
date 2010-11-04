@@ -80,8 +80,20 @@ class RoutingTest < Test::Unit::TestCase
 
     get '/foo'
     assert_equal 404, status
-    assert_equal 'text/html', response["Content-Type"]
+    assert_equal 'text/html;charset=utf-8', response["Content-Type"]
     assert_equal "<h1>Not Found</h1>", response.body
+  end
+
+  it 'matches empty PATH_INFO to "/"' do
+    mock_app {
+      get '/' do
+        'worked'
+      end
+    }
+
+    get '/', {}, "PATH_INFO" => ""
+    assert ok?
+    assert_equal 'worked', body
   end
 
   it 'takes multiple definitions of a route' do
@@ -344,6 +356,18 @@ class RoutingTest < Test::Unit::TestCase
     assert_equal 'looks good', body
   end
 
+  it "matches paths that include ampersands" do
+    mock_app {
+      get '/:name' do
+        'looks good'
+      end
+    }
+
+    get '/foo&bar'
+    assert ok?
+    assert_equal 'looks good', body
+  end
+
   it "URL decodes named parameters and splats" do
     mock_app {
       get '/:foo/*' do
@@ -595,6 +619,9 @@ class RoutingTest < Test::Unit::TestCase
       get '/', :provides => :xml do
         request.env['HTTP_ACCEPT']
       end
+      get '/foo', :provides => :html do
+        request.env['HTTP_ACCEPT']
+      end
     }
 
     get '/', {}, { 'HTTP_ACCEPT' => 'application/xml' }
@@ -603,6 +630,13 @@ class RoutingTest < Test::Unit::TestCase
     assert_equal 'application/xml', response.headers['Content-Type']
 
     get '/', {}, { :accept => 'text/html' }
+    assert !ok?
+
+    get '/foo', {}, { 'HTTP_ACCEPT' => 'text/html;q=0.9' }
+    assert ok?
+    assert_equal 'text/html;q=0.9', body
+
+    get '/foo', {}, { 'HTTP_ACCEPT' => '' }
     assert !ok?
   end
 

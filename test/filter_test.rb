@@ -55,7 +55,7 @@ class BeforeFilterTest < Test::Unit::TestCase
 
     get '/foo'
     assert redirect?
-    assert_equal '/bar', response['Location']
+    assert_equal 'http://example.org/bar', response['Location']
     assert_equal '', body
   end
 
@@ -121,6 +121,29 @@ class BeforeFilterTest < Test::Unit::TestCase
     assert_equal File.read(__FILE__), body
     assert !ran_filter
   end
+
+  it 'takes an optional route pattern' do
+    ran_filter = false
+    mock_app do
+      before("/b*") { ran_filter = true }
+      get('/foo') { }
+      get('/bar') { }
+    end
+    get '/foo'
+    assert !ran_filter
+    get '/bar'
+    assert ran_filter
+  end
+
+  it 'generates block arguments from route pattern' do
+    subpath = nil
+    mock_app do
+      before("/foo/:sub") { |s| subpath = s }
+      get('/foo/*') { }
+    end
+    get '/foo/bar'
+    assert_equal subpath, 'bar'
+  end
 end
 
 class AfterFilterTest < Test::Unit::TestCase
@@ -166,7 +189,7 @@ class AfterFilterTest < Test::Unit::TestCase
 
     get '/foo'
     assert redirect?
-    assert_equal '/bar', response['Location']
+    assert_equal 'http://example.org/bar', response['Location']
     assert_equal '', body
   end
 
@@ -217,5 +240,41 @@ class AfterFilterTest < Test::Unit::TestCase
     assert ok?
     assert_equal File.read(__FILE__), body
     assert !ran_filter
+  end
+
+  it 'takes an optional route pattern' do
+    ran_filter = false
+    mock_app do
+      after("/b*") { ran_filter = true }
+      get('/foo') { }
+      get('/bar') { }
+    end
+    get '/foo'
+    assert !ran_filter
+    get '/bar'
+    assert ran_filter
+  end
+
+  it 'generates block arguments from route pattern' do
+    subpath = nil
+    mock_app do
+      after("/foo/:sub") { |s| subpath = s }
+      get('/foo/*') { }
+    end
+    get '/foo/bar'
+    assert_equal subpath, 'bar'
+  end
+  
+  it 'is possible to access url params from the route param' do
+    ran = false
+    mock_app do
+      get('/foo/*') { }
+      before('/foo/:sub') do
+        assert_equal params[:sub], 'bar'
+        ran = true
+      end
+    end
+    get '/foo/bar'
+    assert ran
   end
 end
