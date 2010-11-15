@@ -7,7 +7,7 @@ require 'sinatra/showexceptions'
 require 'tilt'
 
 module Sinatra
-  VERSION = '1.1.0'
+  VERSION = '1.1.1'
 
   # The request object. See Rack::Request for more info:
   # http://rack.rubyforge.org/doc/classes/Rack/Request.html
@@ -27,6 +27,18 @@ module Sinatra
       end
     else
       alias secure? ssl?
+    end
+
+    def route
+      @route ||= begin
+        path = Rack::Utils.unescape(path_info)
+        path.empty? ? "/" : path
+      end
+    end
+
+    def path_info=(value)
+      @route = nil
+      super
     end
   end
 
@@ -394,7 +406,8 @@ module Sinatra
     end
 
     def builder(template=nil, options={}, locals={}, &block)
-      render_xml(:builder, template, options, locals, &block)
+      options[:default_content_type] = :xml
+      render_ruby(:builder, template, options, locals, &block)
     end
 
     def liquid(template, options={}, locals={})
@@ -417,8 +430,8 @@ module Sinatra
       render :radius, template, options, locals
     end
 
-    def markaby(template, options={}, locals={})
-      render :mab, template, options, locals
+    def markaby(template=nil, options={}, locals={}, &block)
+      render_ruby(:mab, template, options, locals, &block)
     end
 
     def coffee(template, options={}, locals={})
@@ -427,14 +440,17 @@ module Sinatra
     end
 
     def nokogiri(template=nil, options={}, locals={}, &block)
-      options[:layout] = false if Tilt::VERSION <= "1.1"
-      render_xml(:nokogiri, template, options, locals, &block)
+      options[:default_content_type] = :xml
+      render_ruby(:nokogiri, template, options, locals, &block)
+    end
+
+    def slim(template, options={}, locals={})
+      render :slim, template, options, locals
     end
 
   private
     # logic shared between builder and nokogiri
-    def render_xml(engine, template, options={}, locals={}, &block)
-      options[:default_content_type] = :xml
+    def render_ruby(engine, template, options={}, locals={}, &block)
       options, template = template, nil if template.is_a?(Hash)
       template = Proc.new { block } if template.nil?
       render engine, template, options, locals
@@ -455,7 +471,7 @@ module Sinatra
 
       # compile and render template
       layout_was      = @default_layout
-      @default_layout = false if layout
+      @default_layout = false
       template        = compile_template(engine, data, options, views)
       output          = template.render(self, locals, &block)
       @default_layout = layout_was
@@ -635,11 +651,7 @@ module Sinatra
     # Returns pass block.
     def process_route(pattern, keys, conditions)
       @original_params ||= @params
-      @path ||= begin
-        path = unescape(@request.path_info)
-        path.empty? ? "/" : path
-      end
-      if match = pattern.match(@path)
+      if match = pattern.match(@request.route)
         values = match.captures.to_a
         params =
           if keys.any?
